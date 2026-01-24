@@ -74,7 +74,7 @@ def select_model():
     return MODELS.get(choice, MODELS["1"])
 
 def web_search(query):
-    with console.status(f"[bold blue]Searching DDGS for: {query}..."):
+    with console.status(f"[bold blue]Searching Web..."):
         try:
             with DDGS() as ddgs:
                 results = [r for r in ddgs.text(query, max_results=5)]
@@ -119,6 +119,7 @@ def run_ai(user_text, search_data=None):
     md = Markdown("💭 *Thinking...*")
     with Live(md, console=console, auto_refresh=True) as live:
         try:
+            # Explicit call to chat_completion avoids auto-router errors
             for chunk in client.chat_completion(model=MODEL_ID, messages=msgs, stream=True, max_tokens=4000):
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
@@ -142,7 +143,7 @@ while True:
     if cmd.lower() == "switch": MODEL_NAME, MODEL_ID, MODEL_TYPE = select_model(); continue
     if cmd.lower() == "status":
         table = Table(title="🧠 System Status")
-        table.add_row("Model", MODEL_NAME); table.add_row("Files", f"{len(DEEP_MEMORY['files'])} objects")
+        table.add_row("Model", MODEL_NAME); table.add_row("Context", f"{len(DEEP_MEMORY['files'])} objects")
         console.print(table); continue
     if cmd.lower() == "wipe":
         chat_history, DEEP_MEMORY = [], {"files": {}}
@@ -165,5 +166,5 @@ while True:
             else:
                 with open(p, 'r', encoding='utf-8', errors='ignore') as f: DEEP_MEMORY["files"][p] = f.read()
             console.print(f"[green]✅ Loaded {os.path.basename(p)}[/green]")
-            run_ai(f"Acknowledge {os.path.basename(p)}."); continue
+            run_ai(f"I uploaded {os.path.basename(p)}."); continue
     run_ai(cmd)
