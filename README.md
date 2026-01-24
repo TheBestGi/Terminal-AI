@@ -7,7 +7,7 @@ A professional-grade CLI developer environment. Bridge the gap between local fil
 
 1. **Clone the Directory:**
    ```bash
-   git clone <your-repo-link>
+   git clone https://github.com/TheBestGi/Terminal-AI
    cd terminal-ai
 
 2: **Install required dependencies.**
