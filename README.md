@@ -62,8 +62,6 @@ DeepSeek V3 (685B): General purpose high-end intelligence for complex queries.
 
 DeepSeek R1: Specialized for deep logic, math, and Chain-of-Thought reasoning.
 
-Llama 3.2 Vision: Optimized for image analysis. Use after uploading a photo.
-
 Flux.1 Schnell: High-speed, high-quality image generation (saves to /images).
 
 Qwen 2.5 Coder: Optimized for Python/Web development and local file writing.
