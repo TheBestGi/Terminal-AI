@@ -66,6 +66,12 @@ Flux.1 Schnell: High-speed, high-quality image generation (saves to /images).
 
 Qwen 2.5 Coder: Optimized for Python/Web development and local file writing.
 
+Qwen 2.5 VL: Vision model
+
+Llama 3.3 70B: High IQ
+
+
+
 📁 **Project Structure**
 
 terminal_ai.py: The main execution engine.
