@@ -21,17 +21,22 @@ def get_config():
     """Handles Token and Environment persistence."""
     token = None
     if os.path.exists(ENV_FILE):
-        with open(ENV_FILE, "r") as f:
-            for line in f:
-                if line.startswith("HF_TOKEN="):
-                    token = line.split("=")[1].strip()
+        try:
+            with open(ENV_FILE, "r") as f:
+                for line in f:
+                    if line.startswith("HF_TOKEN="):
+                        token = line.split("=")[1].strip()
+        except OSError: pass # Prevent crash on read error
     
     if not token:
-        console.print(Panel("[bold yellow]🔑 FIRST-TIME SETUP[/bold yellow]\nPlease enter your [bold cyan]Hugging Face Token[/bold cyan] (read/write):"))
+        console.print(Panel("[bold yellow]🔑 FIRST-TIME SETUP[/bold yellow]\nPlease enter your [bold cyan]Hugging Face Token[/bold cyan]:"))
         token = console.input("[bold green]Token: [/bold green]").strip()
-        with open(ENV_FILE, "w") as f:
-            f.write(f"HF_TOKEN={token}")
-        console.print(f"[green]✅ Token saved to {ENV_FILE}[/green]")
+        try:
+            with open(ENV_FILE, "w") as f:
+                f.write(f"HF_TOKEN={token}")
+            console.print(f"[green]✅ Token saved to {ENV_FILE}[/green]")
+        except OSError as e:
+            console.print(f"[red]Failed to save config: {e}[/red]")
     
     return token
 
@@ -49,18 +54,19 @@ def load_mem():
                     data.get("deep_mem", {"files": {}}), 
                     data.get("custom_role", "You are a local developer AI.")
                 )
-        except: pass
+        except Exception: pass
     return [], {"files": {}}, "You are a local developer AI."
 
 def save_mem(history, deep_mem, role):
     try:
+        # Use a temporary file pattern to avoid descriptor errors during writes
         with open(MEMORY_FILE, 'w') as f:
             json.dump({
                 "history": history[-20:], 
                 "deep_mem": deep_mem, 
                 "custom_role": role
             }, f)
-    except: pass
+    except OSError: pass
 
 chat_history, DEEP_MEMORY, CUSTOM_ROLE = load_mem()
 
@@ -92,9 +98,11 @@ def handle_file_writing(text):
         fpath = os.path.join(BASE_DIR, filename.strip())
         clean_content = re.sub(r"```[a-z]*\n", "", content).replace("```", "").strip()
         try:
-            with open(fpath, "w") as f: f.write(clean_content)
+            with open(fpath, "w") as f: 
+                f.write(clean_content)
             console.print(Panel(f"[bold green]💾 AUTO-SAVED:[/bold green] {fpath}", border_style="green"))
-        except Exception as e: console.print(f"[red]Write Error: {e}[/red]")
+        except Exception as e: 
+            console.print(f"[red]Write Error: {e}[/red]")
 
 def run_ai(user_text, search_data=None):
     global chat_history
@@ -104,8 +112,10 @@ def run_ai(user_text, search_data=None):
             try:
                 img = client.text_to_image(user_text, model=MODEL_ID)
                 path = os.path.join(IMAGE_DIR, f"flux_{int(time.time())}.png")
-                img.save(path); console.print(f"[green]🎨 Saved: {path}[/green]")
-            except Exception as e: console.print(f"[red]Flux Error: {e}[/red]")
+                img.save(path)
+                console.print(f"[green]🎨 Saved: {path}[/green]")
+            except Exception as e: 
+                console.print(f"[red]Flux Error: {e}[/red]")
             return
 
     txt_context, img_list = "", []
@@ -115,7 +125,8 @@ def run_ai(user_text, search_data=None):
         else:
             txt_context += f"FILE ({os.path.basename(name)}):\n{data}\n---\n"
     
-    if search_data: txt_context += f"WEB_RESEARCH:\n{search_data}\n---\n"
+    if search_data: 
+        txt_context += f"WEB_RESEARCH:\n{search_data}\n---\n"
 
     sys_prompt = f"{CUSTOM_ROLE}\nProject Path: {BASE_DIR}\nContext:\n{txt_context}\nTo write files, use 'SAVE_FILE: filename.ext' and end with 'END_SAVE'."
     user_payload = f"{sys_prompt}\n\nUSER_QUERY: {user_text}"
@@ -125,9 +136,12 @@ def run_ai(user_text, search_data=None):
 
     full_resp = ""
     console.print(f"\n[bold magenta]{MODEL_NAME}[/bold magenta]:")
+    
+    # Live display with safety handling for stream interruption
     with Live(Markdown("💭 *Thinking...*"), console=console, auto_refresh=True) as live:
         try:
-            for chunk in client.chat_completion(model=MODEL_ID, messages=msgs, stream=True, max_tokens=4000):
+            stream = client.chat_completion(model=MODEL_ID, messages=msgs, stream=True, max_tokens=4000)
+            for chunk in stream:
                 if chunk.choices:
                     delta = chunk.choices[0].delta
                     token = getattr(delta, 'reasoning_content', "") or getattr(delta, 'content', "") or ""
@@ -138,15 +152,23 @@ def run_ai(user_text, search_data=None):
             chat_history.append({"role": "user", "content": user_text})
             chat_history.append({"role": "assistant", "content": full_resp})
             save_mem(chat_history, DEEP_MEMORY, CUSTOM_ROLE)
-        except Exception as e: console.print(f"[red]Error: {e}[/red]")
+        except OSError as e:
+            if e.errno == 9:
+                console.print("[red]\n⚠️ Stream Interrupted (Bad File Descriptor). The connection was closed unexpectedly.[/red]")
+            else:
+                console.print(f"[red]\nSystem Error: {e}[/red]")
+        except Exception as e: 
+            console.print(f"[red]\nAI Error: {e}[/red]")
 
 # --- Main CLI ---
 while True:
     try: 
         cmd = console.input(f"\n[bold cyan]User[/bold cyan] [dim](search/upload/role/status/wipe/switch/exit)[/dim]: ").strip()
-    except EOFError: break
+    except (EOFError, KeyboardInterrupt): 
+        break
     
-    if not cmd or cmd.lower() == "exit": break
+    if not cmd or cmd.lower() == "exit": 
+        break
 
     if cmd.lower() == "role":
         CUSTOM_ROLE = console.input("[bold yellow]New System Role: [/bold yellow]").strip()
@@ -155,37 +177,57 @@ while True:
 
     if cmd.lower() == "status":
         t = Table(title="AI Context Status")
+        t.add_column("Property")
+        t.add_column("Value")
         t.add_row("Model", MODEL_NAME)
         t.add_row("Memory", f"{len(DEEP_MEMORY['files'])} objects")
-        t.add_row("Token", f"{TOKEN[:8]}****")
-        console.print(t); continue
+        t.add_row("Token", f"{TOKEN[:8]}****" if TOKEN else "None")
+        console.print(t)
+        continue
 
     if cmd.lower() == "switch":
         MODEL_NAME, MODEL_ID, MODEL_TYPE = select_model()
         continue
 
     if cmd.lower() == "wipe":
-        if os.path.exists(MEMORY_FILE): os.remove(MEMORY_FILE)
-        if os.path.exists(ENV_FILE): os.remove(ENV_FILE)
-        console.print("[bold red]💥 ALL DATA & CONFIG WIPED.[/bold red]"); sys.exit(0)
+        try:
+            if os.path.exists(MEMORY_FILE): os.remove(MEMORY_FILE)
+            if os.path.exists(ENV_FILE): os.remove(ENV_FILE)
+            console.print("[bold red]💥 ALL DATA & CONFIG WIPED.[/bold red]")
+            sys.exit(0)
+        except OSError as e:
+            console.print(f"[red]Wipe failed: {e}[/red]")
 
     if cmd.lower().startswith("search "):
-        with DDGS() as ddgs:
-            res = "\n".join([f"{r['href']}: {r['body']}" for r in ddgs.text(cmd[7:], max_results=5)])
-        run_ai(f"Web Research: {cmd[7:]}", search_data=res); continue
+        search_query = cmd[7:].strip()
+        with console.status(f"[bold green]Searching for '{search_query}'..."):
+            try:
+                # Direct call to DDGS avoids context manager socket reuse issues
+                results = DDGS().text(search_query, max_results=5)
+                res_text = "\n".join([f"{r.get('href')}: {r.get('body')}" for r in results])
+                run_ai(f"Web Research: {search_query}", search_data=res_text)
+            except Exception as e:
+                console.print(f"[red]Search Error: {e}[/red]")
+        continue
 
     if cmd.lower().startswith("upload"):
         path = cmd[7:].strip().strip("'\"")
         if os.path.exists(path):
-            ext = path.split('.')[-1].lower()
-            if ext in ['png', 'jpg', 'jpeg', 'webp']:
-                with open(path, "rb") as f:
-                    enc = base64.b64encode(f.read()).decode('utf-8')
-                    DEEP_MEMORY["files"][path] = f"data:image/{ext};base64,{enc}"
-            else:
-                with open(path, "r", errors="ignore") as f:
-                    DEEP_MEMORY["files"][path] = f.read()
-            console.print(f"[green]📂 Loaded: {path}[/green]")
+            try:
+                ext = path.split('.')[-1].lower()
+                if ext in ['png', 'jpg', 'jpeg', 'webp']:
+                    with open(path, "rb") as f:
+                        enc = base64.b64encode(f.read()).decode('utf-8')
+                        DEEP_MEMORY["files"][path] = f"data:image/{ext};base64,{enc}"
+                else:
+                    with open(path, "r", errors="ignore") as f:
+                        DEEP_MEMORY["files"][path] = f.read()
+                console.print(f"[green]📂 Loaded: {path}[/green]")
+            except OSError as e:
+                console.print(f"[red]Upload failed: {e}[/red]")
+        else:
+            console.print(f"[red]File not found: {path}[/red]")
         continue
 
     run_ai(cmd)
+
